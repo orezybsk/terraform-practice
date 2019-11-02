@@ -33,3 +33,17 @@ https://github.com/tfutils/tfenv
     ```
    
 1. 別のバージョンに変更するには `tfenv use 0.12.13`
+
+## 参考資料
+
+* Terraform - AWS Provider  
+    https://www.terraform.io/docs/providers/aws/index.html
+
+* 既存のAWS環境を後からTerraformでコード化する  
+    https://dev.classmethod.jp/cloud/aws/aws-with-terraform/
+
+* Linux AMI の検索  
+    https://docs.aws.amazon.com/ja_jp/AWSEC2/latest/UserGuide/finding-an-ami.html
+
+* TerraformでSecurity Groupを作ったら上手くいかなかった  
+    https://dev.classmethod.jp/cloud/aws/my-mistake-about-creating-sg-by-terraform/
