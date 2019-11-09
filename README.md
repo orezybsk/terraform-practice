@@ -34,6 +34,27 @@ https://github.com/tfutils/tfenv
    
 1. 別のバージョンに変更するには `tfenv use 0.12.13`
 
+## direnv のインストール
+
+1. https://github.com/direnv/direnv/releases  
+    から direnv.windows-amd64.exe をダウンロード
+1. `D:\direnv\` の下に direnv.windows-amd64.exe を置く
+1. `C:\Users\<Windowsユーザ名>\` の下に .bashrc を作成して以下の内容を記述する
+
+    ```
+    alias direnv="/d/direnv/direnv.windows-amd64.exe"
+    eval "$(direnv hook bash)"
+    ```
+
+1. 環境変数を設定したいディレクトリの下に .envrc を作成して  
+    `export AWS_ACCESS_KEY_ID=...` のように設定したい環境変数を記述する
+1. Git Bash を起動する（起動している場合には起動し直す）  
+    この時 `ARNING: Found ~/.bashrc but no ~/.bash_profile, ~/.bash_login or ~/.profile.`  
+    というエラーメッセージが表示され、`C:\Users\<Windowsユーザ名>\` の下に .bash_profile が作成される
+1. 環境変数を設定したいディレクトリに移動すれば .envrc に設定された環境変数が設定される  
+    ディレクトリから移動すると設定された環境変数は解除される
+1. .gitignore に .envrc が対象外になるよう記述を追加する
+
 ## 参考資料
 
 * Terraform - AWS Provider  
@@ -47,3 +68,9 @@ https://github.com/tfutils/tfenv
 
 * TerraformでSecurity Groupを作ったら上手くいかなかった  
     https://dev.classmethod.jp/cloud/aws/my-mistake-about-creating-sg-by-terraform/
+
+* direnv/direnv  
+    https://github.com/direnv/direnv
+
+* Windows10・Git bash環境にてdirenvを導入する  
+    https://qiita.com/iwaimagic/items/ef99f9444d9d91aea0c3

@@ -34,3 +34,7 @@ out/
 ### Terraform ###
 .terraform/
 terraform.tfstate*
+
+### direnv
+### https://github.com/direnv/direnv
+.envrc
