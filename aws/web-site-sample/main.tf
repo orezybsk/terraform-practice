@@ -91,6 +91,9 @@ resource "aws_s3_bucket" "public" {
 
 resource "aws_s3_bucket" "alb_log" {
   bucket = "alb-log-pragmatic-terraform-orezybsk"
+  // alb を作成するとログファイルが作成されて destroy 出来なくなるので
+  // force_destroy を true にしておく
+  force_destroy = true
 
   lifecycle_rule {
     enabled = false
@@ -125,7 +128,7 @@ data "aws_iam_policy_document" "alb_log" {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// VPC, Subnet
+// VPC, Subnet, EIP, NAT Gateway, Security Group
 //
 resource "aws_vpc" "example" {
   cidr_block           = "10.0.0.0/16"
@@ -165,12 +168,12 @@ resource "aws_route_table" "public_1" {
 resource "aws_route" "public_0" {
   route_table_id         = aws_route_table.public_0.id
   gateway_id             = aws_internet_gateway.example.id
-  destination_cidr_block = "0.0.0.0/16"
+  destination_cidr_block = "0.0.0.0/0"
 }
 resource "aws_route" "public_1" {
   route_table_id         = aws_route_table.public_1.id
   gateway_id             = aws_internet_gateway.example.id
-  destination_cidr_block = "0.0.0.0/16"
+  destination_cidr_block = "0.0.0.0/0"
 }
 
 resource "aws_route_table_association" "public_0" {
@@ -215,12 +218,12 @@ resource "aws_route_table_association" "private_1" {
 resource "aws_route" "private_0" {
   route_table_id         = aws_route_table.private_0.id
   nat_gateway_id         = aws_nat_gateway.nat_gateway_0.id
-  destination_cidr_block = "0.0.0.0/16"
+  destination_cidr_block = "0.0.0.0/0"
 }
 resource "aws_route" "private_1" {
   route_table_id         = aws_route_table.private_1.id
   nat_gateway_id         = aws_nat_gateway.nat_gateway_1.id
-  destination_cidr_block = "0.0.0.0/16"
+  destination_cidr_block = "0.0.0.0/0"
 }
 
 // EIP, NAT Gateway
@@ -245,10 +248,204 @@ resource "aws_nat_gateway" "nat_gateway_1" {
 }
 
 // Security Group
-module "example_sg" {
+//module "example_sg" {
+//  source      = "./module/security_group"
+//  name        = "module-sg"
+//  vpc_id      = aws_vpc.example.id
+//  port        = 80
+//  cidr_blocks = ["0.0.0.0/0"]
+//}
+
+///////////////////////////////////////////////////////////////////////////////
+// ALB
+//
+module "http_sg" {
   source      = "./module/security_group"
-  name        = "module-sg"
+  name        = "http_sg"
   vpc_id      = aws_vpc.example.id
   port        = 80
   cidr_blocks = ["0.0.0.0/0"]
+}
+
+module "https_sg" {
+  source      = "./module/security_group"
+  name        = "https_sg"
+  vpc_id      = aws_vpc.example.id
+  port        = 443
+  cidr_blocks = ["0.0.0.0/0"]
+}
+
+module "http_redirect_sg" {
+  source      = "./module/security_group"
+  name        = "http_redirect_sg"
+  vpc_id      = aws_vpc.example.id
+  port        = 8080
+  cidr_blocks = ["0.0.0.0/0"]
+}
+
+resource "aws_alb" "example" {
+  name                       = "example"
+  internal                   = false
+  idle_timeout               = 60
+  enable_deletion_protection = false
+
+  subnets = [
+    aws_subnet.public_0.id,
+    aws_subnet.public_1.id
+  ]
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_log.id
+    enabled = true
+  }
+
+  security_groups = [
+    module.http_sg.security_group_id,
+    module.https_sg.security_group_id,
+    module.http_redirect_sg.security_group_id
+  ]
+}
+
+resource "aws_alb_listener" "http" {
+  load_balancer_arn = aws_alb.example.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "これは『HTTP』です"
+      status_code  = 200
+    }
+  }
+}
+
+resource "aws_alb_listener" "https" {
+  load_balancer_arn = aws_alb.example.arn
+  port              = 443
+  protocol          = "HTTPS"
+  certificate_arn   = aws_acm_certificate.example.arn
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+
+  // 下に記述した aws_alb_listener_rule により
+  // default_action の動きにはならない
+  default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "これは『HTTPS』です"
+      status_code  = 200
+    }
+  }
+}
+
+resource "aws_alb_listener" "redirect_http_to_https" {
+  load_balancer_arn = aws_alb.example.arn
+  port              = 8080
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = 443
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+resource "aws_alb_target_group" "example" {
+  name                 = "example"
+  target_type          = "ip"
+  vpc_id               = aws_vpc.example.id
+  port                 = 80
+  protocol             = "HTTP"
+  deregistration_delay = 300
+
+  health_check {
+    path                = "/"
+    healthy_threshold   = 5
+    unhealthy_threshold = 2
+    timeout             = 5
+    interval            = 30
+    matcher             = 200
+    port                = "traffic-port"
+    protocol            = "HTTP"
+  }
+
+  depends_on = [aws_alb.example]
+}
+
+resource "aws_alb_listener_rule" "example" {
+  listener_arn = aws_alb_listener.https.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_alb_target_group.example.arn
+  }
+
+  condition {
+    field  = "path-pattern"
+    values = ["/*"]
+  }
+}
+
+output "alb_dns_name" {
+  value = aws_alb.example.dns_name
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Route 53
+//
+variable "domain_name" {}
+
+data "aws_route53_zone" "example" {
+  name = var.domain_name
+}
+
+resource "aws_route53_record" "example" {
+  name    = data.aws_route53_zone.example.name
+  zone_id = data.aws_route53_zone.example.zone_id
+  type    = "A"
+
+  alias {
+    name                   = aws_alb.example.dns_name
+    zone_id                = aws_alb.example.zone_id
+    evaluate_target_health = true
+  }
+}
+
+output "domain_name" {
+  value = aws_route53_record.example.name
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ACM
+//
+resource "aws_acm_certificate" "example" {
+  domain_name               = aws_route53_record.example.name
+  subject_alternative_names = []
+  validation_method         = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "example_certificate" {
+  name    = aws_acm_certificate.example.domain_validation_options[0].resource_record_name
+  type    = aws_acm_certificate.example.domain_validation_options[0].resource_record_type
+  records = [aws_acm_certificate.example.domain_validation_options[0].resource_record_value]
+  zone_id = data.aws_route53_zone.example.id
+  ttl     = 60
+}
+
+resource "aws_acm_certificate_validation" "example" {
+  certificate_arn         = aws_acm_certificate.example.arn
+  validation_record_fqdns = [aws_route53_record.example_certificate.fqdn]
 }

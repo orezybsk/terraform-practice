@@ -74,3 +74,6 @@ https://github.com/tfutils/tfenv
 
 * Windows10・Git bash環境にてdirenvを導入する  
     https://qiita.com/iwaimagic/items/ef99f9444d9d91aea0c3
+
+* TerraformでALBを構築する  
+    https://dev.classmethod.jp/cloud/aws/terraform-alb/
