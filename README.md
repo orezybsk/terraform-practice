@@ -77,3 +77,8 @@ https://github.com/tfutils/tfenv
 
 * TerraformでALBを構築する  
     https://dev.classmethod.jp/cloud/aws/terraform-alb/
+
+* cloudposse/terraform-aws-kms-key  
+    https://github.com/cloudposse/terraform-aws-kms-key
+
+    * module の source に `source = "git::https://github.com/cloudposse/terraform-aws-kms-key.git?ref=master"` と記述できるらしい
