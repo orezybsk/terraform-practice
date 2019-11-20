@@ -603,3 +603,32 @@ resource "aws_kms_alias" "example" {
   name          = "alias/example"
   target_key_id = aws_kms_key.examle.key_id
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// SSMパラメータストア
+//
+resource "aws_ssm_parameter" "db_username" {
+  name        = "/db/username"
+  value       = "root"
+  type        = "String"
+  description = "データベースのユーザー名"
+}
+
+resource "aws_ssm_parameter" "db_raw_password" {
+  name        = "/db/raw_password"
+  value       = "VeryStrongPassword"
+  type        = "SecureString"
+  description = "データベースのパスワード"
+}
+
+// aws ssm put-parameter --name '/db/password' --type 'SecureString' --value 'ModifiedStrongPassword!' --overwrite
+resource "aws_ssm_parameter" "db_password" {
+  name        = "/db/password"
+  value       = "uninitialized"
+  type        = "SecureString"
+  description = "データベースのパスワード"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
