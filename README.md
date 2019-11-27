@@ -82,3 +82,6 @@ https://github.com/tfutils/tfenv
     https://github.com/cloudposse/terraform-aws-kms-key
 
     * module の source に `source = "git::https://github.com/cloudposse/terraform-aws-kms-key.git?ref=master"` と記述できるらしい
+
+* 数十台のRDSバージョンアップをterraformで行ってみた  
+    https://qiita.com/sonic883b/items/afecb2521695ca1f5c90
