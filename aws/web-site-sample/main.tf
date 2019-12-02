@@ -691,7 +691,9 @@ resource "aws_db_instance" "example" {
   maintenance_window         = "mon:10:10-mon:10:40"
   auto_minor_version_upgrade = false
   // deletion_protection        = true
-  skip_final_snapshot       = false
+
+  // skip_final_snapshot       = false
+  skip_final_snapshot       = true
   final_snapshot_identifier = "example"
 
   port                   = 3306
@@ -711,5 +713,57 @@ module "mysql_sg" {
   name        = "mysql-sg"
   vpc_id      = aws_vpc.example.id
   port        = 3306
+  cidr_blocks = [aws_vpc.example.cidr_block]
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ElastiCache
+//
+// Redis 固有のパラメータ
+// https://docs.aws.amazon.com/ja_jp/AmazonElastiCache/latest/red-ug/ParameterGroups.Redis.html
+resource "aws_elasticache_parameter_group" "example" {
+  name   = "example"
+  family = "redis5.0"
+
+  parameter {
+    name  = "cluster-enabled"
+    value = "no"
+  }
+}
+
+resource "aws_elasticache_subnet_group" "example" {
+  name       = "example"
+  subnet_ids = [aws_subnet.private_0.id, aws_subnet.private_1.id]
+}
+
+resource "aws_elasticache_replication_group" "example" {
+  replication_group_id          = "example"
+  replication_group_description = "Cluster Disabled"
+  engine                        = "redis"
+  // サポートされる Redis 用 ElastiCache バージョン
+  // https://docs.aws.amazon.com/ja_jp/AmazonElastiCache/latest/red-ug/supported-engine-versions.html
+  engine_version        = "5.0.5"
+  number_cache_clusters = 3
+  // Amazon ElastiCache の料金
+  // https://aws.amazon.com/jp/elasticache/pricing/?nc=sn&loc=4
+  // 旧世代のキャッシュノード
+  // https://aws.amazon.com/jp/elasticache/previous-generation/
+  node_type                  = "cache.m3.medium"
+  snapshot_window            = "09:10-10:10"
+  snapshot_retention_limit   = 7
+  maintenance_window         = "mon:10:10-mon:11:40"
+  automatic_failover_enabled = true
+  port                       = 6379
+  apply_immediately          = false
+  security_group_ids         = [module.redis_sg.security_group_id]
+  parameter_group_name       = aws_elasticache_parameter_group.example.name
+  subnet_group_name          = aws_elasticache_subnet_group.example.name
+}
+
+module "redis_sg" {
+  source      = "./module/security_group"
+  name        = "redis-sg"
+  vpc_id      = aws_vpc.example.id
+  port        = 6379
   cidr_blocks = [aws_vpc.example.cidr_block]
 }
