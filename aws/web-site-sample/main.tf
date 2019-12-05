@@ -767,3 +767,194 @@ module "redis_sg" {
   port        = 6379
   cidr_blocks = [aws_vpc.example.cidr_block]
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// SSHレスオペレーション
+//
+// (オプション) AWS CLI 用の Session Manager Plugin をインストールする
+// https://docs.aws.amazon.com/ja_jp/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+//
+data "aws_iam_policy" "ec2_for_ssm" {
+  arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+data "aws_iam_policy_document" "ec2_for_ssm" {
+  source_json = data.aws_iam_policy.ec2_for_ssm.policy
+
+  statement {
+    effect    = "Allow"
+    resources = ["*"]
+
+    actions = [
+      "s2:PutObject",
+      "logs:PutLogEvents",
+      "logs:CreateLogStream",
+      "ecr:GetAuthorizationToken",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage",
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParametersByPath",
+      "kms:Decrypt"
+    ]
+  }
+}
+
+module "ec2_for_ssm_role" {
+  source     = "./module/iam_role"
+  name       = "ec2-for-ssm"
+  identifier = "ec2.amazonaws.com"
+  policy     = data.aws_iam_policy_document.ec2_for_ssm.json
+}
+
+resource "aws_iam_instance_profile" "ec2_for_ssm" {
+  name = "ec2-for-ssm"
+  role = module.ec2_for_ssm_role.iam_role_name
+}
+
+// filter の指定条件は
+// https://docs.aws.amazon.com/ja_jp/AWSEC2/latest/UserGuide/finding-an-ami.html
+// の「例: 現在の Amazon Linux 2 AMI を検索する」参照。
+data "aws_ami" "recent_amazon_linux_2" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-2.0.????????-x86_64-gp2"]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
+
+resource "aws_instance" "example_for_operation" {
+  ami                  = data.aws_ami.recent_amazon_linux_2.image_id
+  instance_type        = "t3.micro"
+  iam_instance_profile = aws_iam_instance_profile.ec2_for_ssm.name
+  subnet_id            = aws_subnet.private_0.id
+  user_data            = file("./user_data.sh")
+}
+
+output "operation_instance_id" {
+  value = aws_instance.example_for_operation.id
+}
+
+resource "aws_s3_bucket" "operation" {
+  bucket = "operation-pragmatic-terraformx"
+
+  lifecycle_rule {
+    enabled = true
+    expiration {
+      days = "180"
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_group" "operation" {
+  name              = "/operation"
+  retention_in_days = 180
+}
+
+resource "aws_ssm_document" "session_manager_run_shell" {
+  name            = "SSM-SessionManagerRunShell"
+  document_type   = "Session"
+  document_format = "JSON"
+
+  content = <<EOF
+  {
+    "schemaVersion": "1.0",
+    "description": "Document to hold regional settings for Session Manager",
+    "sessionType": "Standard_Stream",
+    "inputs": {
+      "s3BucketName": "${aws_s3_bucket.operation.id}",
+      "cloudWatchLogGroupName": "${aws_cloudwatch_log_group.operation.name}"
+    }
+  }
+EOF
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// CloudWatch logs --> Kinesis Data Firehose --> S3
+//
+resource "aws_s3_bucket" "cloudwatch_logs" {
+  bucket = "cloudwatch-logs-pragmatic-terraformx"
+
+  lifecycle_rule {
+    enabled = true
+
+    expiration {
+      days = "180"
+    }
+  }
+}
+
+data "aws_iam_policy_document" "kinesis_data_firehose" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "s3:AbortMultipartUpload",
+      "s3:GetBucketLocation",
+      "s3:GetObject",
+      "s3:ListBucket",
+      "s3:ListBucketMultipartUploads",
+      "s3:PutObject",
+    ]
+
+    resources = [
+      "arn:aws:s3:::${aws_s3_bucket.cloudwatch_logs.id}",
+      "arn:aws:s3:::${aws_s3_bucket.cloudwatch_logs.id}/*",
+    ]
+  }
+}
+
+module "kinesis_data_firehose_role" {
+  source     = "./module/iam_role"
+  name       = "kinesis-data-firehose"
+  identifier = "firehose.amazonaws.com"
+  policy     = data.aws_iam_policy_document.kinesis_data_firehose.json
+}
+
+resource "aws_kinesis_firehose_delivery_stream" "example" {
+  name        = "example"
+  destination = "s3"
+
+  s3_configuration {
+    role_arn   = module.kinesis_data_firehose_role.iam_role_arn
+    bucket_arn = aws_s3_bucket.cloudwatch_logs.arn
+    prefix     = "ecs-scheduled-tasks/example/"
+  }
+}
+
+data "aws_iam_policy_document" "cloudwatch_logs" {
+  statement {
+    effect    = "Allow"
+    actions   = ["firehose:*"]
+    resources = ["arn:aws:firehose:ap-northeast-1:*:*"]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = ["arn:aws:iam::*:role/cloudwatch-logs"]
+  }
+}
+
+module "cloudwatch_logs_role" {
+  source     = "./module/iam_role"
+  name       = "cloudwatch-logs"
+  identifier = "logs.ap-northeast-1.amazonaws.com"
+  policy     = data.aws_iam_policy_document.cloudwatch_logs.json
+}
+
+resource "aws_cloudwatch_log_subscription_filter" "example" {
+  name            = "example"
+  log_group_name  = aws_cloudwatch_log_group.for_ecs_scheduled_tasks.name
+  destination_arn = aws_kinesis_firehose_delivery_stream.example.arn
+  filter_pattern  = "[]"
+  role_arn        = module.cloudwatch_logs_role.iam_role_arn
+}
