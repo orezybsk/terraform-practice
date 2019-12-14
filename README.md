@@ -23,7 +23,7 @@ https://github.com/tfutils/tfenv
        list-remote   List all installable versions
     ```
 
-1. `tfenv listremote`
+1. `tfenv list-remote`
 1. `tfenv install 0.12.13`
 1. `tfenv list`
 
