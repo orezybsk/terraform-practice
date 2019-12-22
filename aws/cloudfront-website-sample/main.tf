@@ -132,7 +132,6 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     prefix          = "prefix"
   }
 
-//  aliases = [var.dns_zone_apex]
   aliases = [var.dns_zone_apex, var.dns_sub_domain_www]
 
   default_cache_behavior {
