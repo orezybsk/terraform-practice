@@ -13,7 +13,7 @@ terraform {
 
   backend "s3" {
     bucket = "orezybsk-terraform-practice"
-    key = "aws/cloudfront-website-sample"
+    key    = "aws/cloudfront-website-sample"
     region = "ap-northeast-1"
   }
 }
@@ -28,13 +28,30 @@ provider "aws" {
   region = "us-east-1"
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// Route53 の Public Zone
+// ※Route53 でドメインを取得したので作成済、resource ではなく data で定義する
+//
 data "aws_route53_zone" "dns_zone_apex" {
   name = var.dns_zone_apex
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// Route53 に Public Subdomain Zone を作成する
+//
+resource "aws_route53_zone" "dns_sub_domain_www" {
+  name = var.dns_sub_domain_www
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// ACM で SSL証明書を発行する
+//
 resource "aws_acm_certificate" "dns_zone_apex" {
   domain_name               = data.aws_route53_zone.dns_zone_apex.name
-  subject_alternative_names = []
+  subject_alternative_names = ["*.${var.dns_zone_apex}"]
   validation_method         = "DNS"
   provider                  = aws.virginia
 
@@ -43,20 +60,19 @@ resource "aws_acm_certificate" "dns_zone_apex" {
   }
 }
 
+// TODO: 下の記述だと SSL証明書の発行完了まで待てていない時がある
 resource "aws_route53_record" "dns_zone_apex_certificate" {
-  name    = aws_acm_certificate.dns_zone_apex.domain_validation_options[0].resource_record_name
-  type    = aws_acm_certificate.dns_zone_apex.domain_validation_options[0].resource_record_type
-  records = [aws_acm_certificate.dns_zone_apex.domain_validation_options[0].resource_record_value]
+  name    = aws_acm_certificate.dns_zone_apex.domain_validation_options.0.resource_record_name
+  type    = aws_acm_certificate.dns_zone_apex.domain_validation_options.0.resource_record_type
+  records = [aws_acm_certificate.dns_zone_apex.domain_validation_options.0.resource_record_value]
   zone_id = data.aws_route53_zone.dns_zone_apex.id
   ttl     = 60
 }
 
-resource "aws_acm_certificate_validation" "dns_zone_apex" {
-  certificate_arn         = aws_acm_certificate.dns_zone_apex.arn
-  validation_record_fqdns = [aws_route53_record.dns_zone_apex_certificate.fqdn]
-  provider                = aws.virginia
-}
 
+///////////////////////////////////////////////////////////////////////////////
+// Web サイトのコンテンツを入れる S3 Bucket を作成する
+//
 resource "aws_s3_bucket" "content_bucket" {
   bucket = var.s3_content_bucket_name
   acl    = "private"
@@ -65,6 +81,10 @@ resource "aws_s3_bucket" "content_bucket" {
   force_destroy = true
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// CloudFront Distribution を作成する
+//
 resource "aws_cloudfront_origin_access_identity" "origin_access_identity" {
 }
 
@@ -112,7 +132,8 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     prefix          = "prefix"
   }
 
-  aliases = [var.dns_zone_apex]
+//  aliases = [var.dns_zone_apex]
+  aliases = [var.dns_zone_apex, var.dns_sub_domain_www]
 
   default_cache_behavior {
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
@@ -145,18 +166,35 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
 
   viewer_certificate {
     acm_certificate_arn = aws_acm_certificate.dns_zone_apex.arn
-    ssl_support_method  = "vip"
+    // vip を指定すると 600USD/月 かかる
+    ssl_support_method  = "sni-only"
   }
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// Route53 にドメインを登録する
+//
 resource "aws_route53_record" "dns_zone_apex" {
   zone_id = data.aws_route53_zone.dns_zone_apex.zone_id
-  name = data.aws_route53_zone.dns_zone_apex.name
-  type = "A"
+  name    = data.aws_route53_zone.dns_zone_apex.name
+  type    = "A"
 
   alias {
-    name = aws_cloudfront_distribution.s3_distribution.domain_name
-    zone_id = aws_cloudfront_distribution.s3_distribution.hosted_zone_id
+    name                   = aws_cloudfront_distribution.s3_distribution.domain_name
+    zone_id                = aws_cloudfront_distribution.s3_distribution.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_route53_record" "dns_sub_domain_www" {
+  zone_id = data.aws_route53_zone.dns_zone_apex.zone_id
+  name    = aws_route53_zone.dns_sub_domain_www.name
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.s3_distribution.domain_name
+    zone_id                = aws_cloudfront_distribution.s3_distribution.hosted_zone_id
     evaluate_target_health = false
   }
 }
