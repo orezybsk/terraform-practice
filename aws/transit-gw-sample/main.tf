@@ -1,6 +1,3 @@
-# TODO: internet gateway, nat gateway は vpc-a だけに作成する
-# TODO: vpc をもう１つ追加して３つにする
-
 terraform {
   required_version = "0.12.18"
 
