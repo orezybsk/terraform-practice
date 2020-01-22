@@ -13,21 +13,21 @@ provider "aws" {
 // の「例: 現在の Amazon Linux 2 AMI を検索する」参照。
 data "aws_ami" "recent_amazon_linux_2" {
   most_recent = true
-  owners = ["amazon"]
+  owners      = ["amazon"]
 
   filter {
-    name = "name"
+    name   = "name"
     values = ["amzn2-ami-hvm-2.0.????????-x86_64-gp2"]
   }
 
   filter {
-    name = "state"
+    name   = "state"
     values = ["available"]
   }
 }
 
 resource "aws_vpc" "tp-example-vpc" {
-  cidr_block = "10.0.0.0/16"
+  cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
 
   tags = {
@@ -36,8 +36,8 @@ resource "aws_vpc" "tp-example-vpc" {
 }
 
 resource "aws_subnet" "tp-example-subnet" {
-  cidr_block = "10.0.0.0/24"
-  vpc_id = aws_vpc.tp-example-vpc.id
+  cidr_block        = "10.0.0.0/24"
+  vpc_id            = aws_vpc.tp-example-vpc.id
   availability_zone = "ap-northeast-1b"
 
   tags = {
@@ -68,42 +68,42 @@ resource "aws_route_table" "tp-example-routetable" {
 
 resource "aws_route_table_association" "tp-example-routetable-assoc" {
   route_table_id = aws_route_table.tp-example-routetable.id
-  subnet_id = aws_subnet.tp-example-subnet.id
+  subnet_id      = aws_subnet.tp-example-subnet.id
 }
 
 resource "aws_security_group" "tp-example-sg" {
-  name = "tp-example-sg"
+  name   = "tp-example-sg"
   vpc_id = aws_vpc.tp-example-vpc.id
 
   ingress {
-    from_port = 80
-    protocol = "tcp"
-    to_port = 80
+    from_port   = 80
+    protocol    = "tcp"
+    to_port     = 80
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    from_port = 22
-    protocol = "tcp"
-    to_port = 22
+    from_port   = 22
+    protocol    = "tcp"
+    to_port     = 22
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
-    from_port = 0
-    protocol = "-1"
-    to_port = 0
+    from_port   = 0
+    protocol    = "-1"
+    to_port     = 0
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
 resource "aws_instance" "tp-example-ec2" {
-  ami = data.aws_ami.recent_amazon_linux_2.image_id
-  instance_type = "t3.micro"
-  subnet_id = aws_subnet.tp-example-subnet.id
-  vpc_security_group_ids = [aws_security_group.tp-example-sg.id]
+  ami                         = data.aws_ami.recent_amazon_linux_2.image_id
+  instance_type               = "t3.micro"
+  subnet_id                   = aws_subnet.tp-example-subnet.id
+  vpc_security_group_ids      = [aws_security_group.tp-example-sg.id]
   associate_public_ip_address = true
-  key_name = "orezybsk-keypair"
+  key_name                    = "orezybsk-keypair"
 
   user_data = <<EOF
     #!/bin/bash
