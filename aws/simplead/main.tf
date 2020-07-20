@@ -1,3 +1,7 @@
+// Launch a WorkSpace Using Simple AD
+// https://docs.aws.amazon.com/workspaces/latest/adminguide/launch-workspace-simple-ad.html
+// AWS再入門ブログリレー Amazon WorkSpaces 編
+// https://dev.classmethod.jp/articles/relay_looking_back_amazon-workspaces/
 terraform {
   required_version = "0.12.21"
 }
