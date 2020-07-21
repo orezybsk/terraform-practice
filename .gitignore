@@ -39,3 +39,6 @@ terraform.tfvars
 ### direnv
 ### https://github.com/direnv/direnv
 .envrc
+
+### testdata
+aws/glue-crawler-sample/salesdata.csv
