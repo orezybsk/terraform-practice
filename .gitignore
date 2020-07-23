@@ -42,3 +42,4 @@ terraform.tfvars
 
 ### testdata
 aws/glue-crawler-sample/salesdata.csv
+aws/glue-job-sample/01_testdata_upload/amazon_reviews_us_Camera_v1_00.tsv
